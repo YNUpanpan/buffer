@@ -100,7 +100,7 @@ Vec3f barycentric(Vec2f AB, Vec2f AC, Vec2f PA) {
 }
 
 //绘制三角形面板
-void drawTriangle(Vec3f *screen_vert,Model* model, TGAImage& image, TGAColor color, float *buffer) {
+void drawTriangle(Vec3f *screen_vert,Vec2i *screen_uv,Model* model, TGAImage& image, float intensity, float *buffer) {
 
 	//三角形包围盒边界
 	float xmin, xmax, ymin, ymax;
@@ -122,11 +122,18 @@ void drawTriangle(Vec3f *screen_vert,Model* model, TGAImage& image, TGAColor col
 			Vec2f PA = Vec2f{ screen_vert[0].x - x, screen_vert[0].y - y };
 			Vec3f bary = barycentric(AB, AC, PA);
 			float z = bary * Vec3f{ screen_vert[0].z,screen_vert[1].z,screen_vert[2].z };
+			
+			
 			if (bary.x < 0 || bary.y < 0 || bary.z < 0) {
 				continue;
 			}
 			else {
 				if (z > buffer[y * image.get_width() + x]) {
+					//通过重心坐标公式，计算uv的值，得到纹理颜色
+					Vec2i uv;
+						uv[0] = screen_uv[0].x * bary.x + screen_uv[1].x * bary.y + screen_uv[2].x * bary.z;
+						uv[1] = screen_uv[0].y * bary.x + screen_uv[1].y * bary.y + screen_uv[2].y * bary.z;
+					TGAColor color = model->diffuse(uv);
 					buffer[y * image.get_width() + x] = z;
 					image.set(x, y, color);
 				}
@@ -143,6 +150,7 @@ void drawModel(Model* model, TGAImage& image,Vec3f light_dir,float* buffer) {
 		std::vector<int> cur_face = model->face(i);
 		Vec3f orignal_vert[3];//原始的点坐标[-1,1]
 		Vec3f screen_vert[3];//转化后的屏幕screen点坐标[0,width],[0,height]
+		Vec2i screen_uv[3];
 		for (int j = 0; j < 3; j++)
 		{
 			orignal_vert[j] = (model->vert(cur_face[j]));
@@ -150,8 +158,9 @@ void drawModel(Model* model, TGAImage& image,Vec3f light_dir,float* buffer) {
 			screen_vert[j].x = ((orignal_vert[j].x + 1) / 2) * image.get_width();
 			screen_vert[j].y = ((orignal_vert[j].y + 1) / 2) * image.get_height();
 			screen_vert[j].z = orignal_vert[j].z;
+			screen_uv[j] = model->uv(i, j);
 		}
-
+		
 	//我猜测，.obj再存储三角形顶点时是按照一定规则的，使得计算法线时都是朝向同一侧，不过也先存疑
 		Vec3f normal = ( orignal_vert[2] - orignal_vert[0] ) ^( orignal_vert[1] - orignal_vert[0] );
 		normal.normalize();//归一化和光线求点积得到光线强度
@@ -160,8 +169,8 @@ void drawModel(Model* model, TGAImage& image,Vec3f light_dir,float* buffer) {
 
 		if (intensity > 0) {
 			//绘制出三角形面板
-			TGAColor color = TGAColor(intensity * 255, intensity * 255, intensity * 255, 255);
-			drawTriangle(screen_vert, model, image, color, buffer);
+			
+			drawTriangle(screen_vert, screen_uv,model, image, intensity, buffer);
 		}
 	}
 }
