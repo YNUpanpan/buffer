@@ -100,7 +100,7 @@ Vec3f barycentric(Vec2f AB, Vec2f AC, Vec2f PA) {
 }
 
 //绘制三角形面板
-void drawTriangle(Vec3f *screen_vert,Model* model, TGAImage& image, TGAColor color) {
+void drawTriangle(Vec3f *screen_vert,Model* model, TGAImage& image, TGAColor color, float *buffer) {
 
 	//三角形包围盒边界
 	float xmin, xmax, ymin, ymax;
@@ -121,19 +121,22 @@ void drawTriangle(Vec3f *screen_vert,Model* model, TGAImage& image, TGAColor col
 			//根据重心坐标公式得到重心坐标
 			Vec2f PA = Vec2f{ screen_vert[0].x - x, screen_vert[0].y - y };
 			Vec3f bary = barycentric(AB, AC, PA);
-
+			float z = bary * Vec3f{ screen_vert[0].z,screen_vert[1].z,screen_vert[2].z };
 			if (bary.x < 0 || bary.y < 0 || bary.z < 0) {
 				continue;
 			}
 			else {
-				image.set(x, y, color);
+				if (z > buffer[y * image.get_width() + x]) {
+					buffer[y * image.get_width() + x] = z;
+					image.set(x, y, color);
+				}
 			}
 		}
 	}
 }
 
 //通过三角形面板绘制出模型
-void drawModel(Model* model, TGAImage& image,Vec3f light_dir) {
+void drawModel(Model* model, TGAImage& image,Vec3f light_dir,float* buffer) {
 
 	for (int i = 0; i < model->nfaces(); i++)
 	{
@@ -146,6 +149,7 @@ void drawModel(Model* model, TGAImage& image,Vec3f light_dir) {
 			//将.obj的数据范围[-1,1]转化到该图像的范围
 			screen_vert[j].x = ((orignal_vert[j].x + 1) / 2) * image.get_width();
 			screen_vert[j].y = ((orignal_vert[j].y + 1) / 2) * image.get_height();
+			screen_vert[j].z = orignal_vert[j].z;
 		}
 
 	//我猜测，.obj再存储三角形顶点时是按照一定规则的，使得计算法线时都是朝向同一侧，不过也先存疑
@@ -157,7 +161,7 @@ void drawModel(Model* model, TGAImage& image,Vec3f light_dir) {
 		if (intensity > 0) {
 			//绘制出三角形面板
 			TGAColor color = TGAColor(intensity * 255, intensity * 255, intensity * 255, 255);
-			drawTriangle(screen_vert, model, image, color);
+			drawTriangle(screen_vert, model, image, color, buffer);
 		}
 	}
 }
@@ -167,6 +171,13 @@ int main(int argc, char** argv) {
 	int imageWidth = 1000;
 	TGAImage image(imageWidth, imageHeight, TGAImage::RGB);
 	Vec3f light_dir = Vec3f(0, 0, -1);//光照方向
+
+	//建立深度buffer
+	float* zbuffer = new float[imageWidth * imageHeight];
+	for (int i = 0; i < imageWidth * imageHeight; i++)
+	{
+		zbuffer[i] = -std::numeric_limits<float>::max();//初始化为最小值
+	}
 	//读取模型
 	Model* model = new Model("model/african_head.obj");
 
@@ -174,7 +185,7 @@ int main(int argc, char** argv) {
 	//drawModelLine(model,image);
 	
 	//通过三角形面板绘制出模型
-	drawModel(model, image,light_dir);
+	drawModel(model, image,light_dir,zbuffer);
 
 	/*drawLine(13, 20, 80, 40, image, red);
 	drawLine(20, 13, 40, 80, image, green);
