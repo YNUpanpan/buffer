@@ -58,6 +58,7 @@ int Model::nfaces() {
     return (int)faces_.size();
 }
 
+//这里得到的face是什么
 std::vector<int> Model::face(int idx) {
     std::vector<int> face;
     for (int i = 0; i < (int)faces_[idx].size(); i++) face.push_back(faces_[idx][i][0]);
@@ -78,11 +79,21 @@ void Model::load_texture(std::string filename, const char* suffix, TGAImage& img
     }
 }
 
-TGAColor Model::diffuse(Vec2i uv) {
-    return textureMap_.get(uv.x, uv.y);
+Vec3f Model::norm(int iface, int nvert) {
+    int idx = faces_[iface][nvert][2];
+    return norms_[idx].normalize();
+
+    //return norms_[idx];一开始忘记normalize()图形变形了
+}
+//TGAColor Model::diffuse(Vec2i uv) {
+//    return textureMap_.get(uv.x, uv.y);
+//}
+TGAColor Model::diffuse(Vec2f uvf) {
+    Vec2i uv(uvf[0] * textureMap_.get_width(), uvf[1] * textureMap_.get_height());
+    return textureMap_.get(uv[0], uv[1]);
 }
 
-Vec2i Model::uv(int iface, int nvert) {
-    int idx = faces_[iface][nvert][1];
-    return Vec2i(uv_[idx].x * textureMap_.get_width(), uv_[idx].y * textureMap_.get_height());
+
+Vec2f Model::uv(int iface, int nthvert) {
+    return uv_[faces_[iface][nthvert][1]];
 }
