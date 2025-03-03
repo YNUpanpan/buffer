@@ -16,7 +16,7 @@ const TGAColor blue = TGAColor(0, 0, 255, 255);
 Vec3f eye(1, 1, 4);//摄像机所在的位置
 Vec3f center(0, 0, 0);//摄像机所朝向的中心位置
 Vec3f up{ 0,1,0 };//定义一个向上的方向向量，在视图矩阵中进行转换使用
-
+Vec3f light_dir = Vec3f(0, 0, 1);//光照方向
 
 
 /*绘制线段
@@ -108,7 +108,7 @@ Vec3f barycentric(Vec2f AB, Vec2f AC, Vec2f PA) {
 }
 
 //绘制三角形面板
-void drawTriangle(Vec3f *screen_vert,Vec2f *screen_uv, Vec3f * n,Model* model, TGAImage& image, float *buffer) {
+void drawTriangle(Vec3f *screen_vert,Vec2f *screen_uv, Vec3f * n,Vec3f light,Model* model, TGAImage& image, float *buffer) {
 
 
 	//三角形包围盒边界
@@ -129,27 +129,48 @@ void drawTriangle(Vec3f *screen_vert,Vec2f *screen_uv, Vec3f * n,Model* model, T
 	{
 		for (int y = ymin; y < ymax; y++)
 		{
-
+			
 			//根据重心坐标公式得到重心坐标
 			Vec2f PA = Vec2f{ screen_vert[0].x - x, screen_vert[0].y - y };
 			Vec3f bary = barycentric(AB, AC, PA);
-			float z = bary * Vec3f{ screen_vert[0].z,screen_vert[1].z,screen_vert[2].z };
 
 			if (bary.x < 0 || bary.y < 0 || bary.z < 0) {
 				continue;
 			}
 
-			else {
-				if (z > buffer[y * image.get_width() + x]) {
+
+			float z = bary * Vec3f{ screen_vert[0].z,screen_vert[1].z,screen_vert[2].z };
+			if (z < buffer[y * image.get_width() + x]) continue;
+			
+			buffer[x + y * image.get_width()] = z;
+			
+			
+			
+			Vec3f n_real;
+			for (int i = 0; i < 3; i++)
+			{
+				n_real[0] += n[i][0] * bary[i];
+				n_real[1] += n[i][1] * bary[i];
+				n_real[2] += n[i][2] * bary[i];
+			}
+			n_real=n_real.normalize();
+
+			float intensity;
+			intensity = n_real * light;
+			if (intensity < 0)
+				intensity = 0;
+			
+				
 					//通过重心坐标公式，计算uv的值，得到纹理颜色
 					Vec2f uv;
 						uv[0] = screen_uv[0].x * bary.x + screen_uv[1].x * bary.y + screen_uv[2].x * bary.z;
 						uv[1] = screen_uv[0].y * bary.x + screen_uv[1].y * bary.y + screen_uv[2].y * bary.z;
 					TGAColor color = model->diffuse(uv);
+					TGAColor c = TGAColor(color.r * intensity, color.g * intensity, color.b * intensity, 255);
 					buffer[y * image.get_width() + x] = z;
-					image.set(x, y, color);
-				}
-			}
+					image.set(x, y, c);
+				
+			
 		}
 	}
 }
@@ -174,9 +195,9 @@ Matrix viewport(int x, int y, int w, int h,int depth) {
 Matrix ModelView(Vec3f eye, Vec3f center, Vec3f up) {
 
 
-	Vec3f z = (eye - center).normalize();
-	Vec3f x = (up ^ z).normalize();
-	Vec3f y = (z ^ x).normalize();
+	Vec3f z = (eye - center).normalize();// 视线方向
+	Vec3f x = (up ^ z).normalize();// 右方向
+	Vec3f y = (z ^ x).normalize(); // 上方向
 	Matrix Minv = Matrix::identity(4);
 	for (int i = 0; i < 3; i++) {
 		Minv[0][i] = x[i];
@@ -222,13 +243,11 @@ void drawModel(Model* model, TGAImage& image,Vec3f light_dir,float* buffer) {
 		Vec3f screen_vert[3];//转化后的屏幕screen点坐标[0,width],[0,height]
 		Vec3f n[3];//三个顶点法线向量
 		Vec2f screen_uv[3];
+		float intensity[3];//顶点光线强度
 		for (int j = 0; j < 3; j++)
 		{
 			orignal_vert[j] = (model->vert(cur_face[j]));
-			//将得到的原始顶点进行MVP变化，得到NDC坐标
-			if (orignal_vert[j][1] > 0.8f) {
-				std::cout << 1;
-			}
+			
 			Matrix screen_vertMat0= Matrix(orignal_vert[j]);
 			Matrix screen_vertMat1 = ModelViewM * screen_vertMat0;
 			Matrix screen_vertMat2 = ProjectionM  * screen_vertMat1;
@@ -241,11 +260,14 @@ void drawModel(Model* model, TGAImage& image,Vec3f light_dir,float* buffer) {
 			screen_uv[j] = model->uv(i, j);
 			n[j] = model->norm(i, j);
 			Matrix tempMat(n[j]);
-			Matrix mm = transform_Mat.transpose().inverse()* tempMat;
-			n[j]= Vec3f{ mm[0][0],mm[1][0] ,mm[2][0] };
+			Matrix mm = ModelViewM.inverse().transpose() * tempMat;
+			n[j]= Vec3f{ mm[0][0],mm[1][0] ,mm[2][0] }.normalize();
 		}
+		Matrix tempMat1(light_dir);
+		Matrix lM =  ModelViewM * tempMat1;
+		Vec3f l = Vec3f{ lM[0][0],lM[1][0], lM[2][0] }.normalize();
 			//绘制出三角形面板
-			drawTriangle(screen_vert, screen_uv,n,model, image, buffer);	
+			drawTriangle(screen_vert, screen_uv,n,l,model, image, buffer);	
 	}
 }
 
@@ -254,7 +276,7 @@ int main(int argc, char** argv) {
 	int imageHeight = 1000;
 	int imageWidth = 1000;
 	TGAImage image(imageWidth, imageHeight, TGAImage::RGB);
-	Vec3f light_dir = Vec3f(0, 0, -1);//光照方向
+	
 
 	//建立深度buffer
 	float* zbuffer = new float[imageWidth * imageHeight];
